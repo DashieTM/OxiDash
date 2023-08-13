@@ -1,0 +1,18 @@
+[package]
+name = "oxidash-gtk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gtk = { version = "0.6.6", package = "gtk4" }
+gtk4-layer-shell = "0.0.3"
+adw = { version = ">= 0.3.1", package = "libadwaita", features = ["v1_2"] }
+serde = "1.0.158"
+serde_derive = "1.0.158"
+serde_json = "*"
+json = "*"
+
+[build-dependencies]
+glib-build-tools = "0.18"
