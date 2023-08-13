@@ -79,6 +79,7 @@ impl ObjectImpl for Window {
 
         for notification in notifications.iter() {
             let notibox = Box::new(gtk::Orientation::Horizontal, 5);
+            notibox.set_widget_name("Notification");
             let textbox = Box::new(gtk::Orientation::Vertical, 5);
             textbox.set_width_request(380);
             let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);

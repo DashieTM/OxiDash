@@ -1,8 +1,11 @@
 mod utils;
 mod window;
 
+use std::env;
 use std::process::Command;
+use std::rc::{Rc, Weak};
 
+use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
 use gtk::glib::clone;
 use gtk::prelude::*;
@@ -100,6 +103,18 @@ fn get_notifications() -> Notifications {
 }
 
 fn main() -> glib::ExitCode {
+    let mut css_string = "".to_string();
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 2 {
+        let mut argiter = args.iter();
+        argiter.next().unwrap();
+        if argiter.next().unwrap() == "--css" {
+            let next = argiter.next();
+            if next.is_some() {
+                css_string = next.unwrap().clone();
+            }
+        }
+    }
     // Register and include resources
     gio::resources_register_include!("src.templates.gresource")
         .expect("Failed to register resources.");
@@ -109,13 +124,14 @@ fn main() -> glib::ExitCode {
 
     app.connect_startup(move |_| {
         adw::init().unwrap();
+        load_css(css_string.clone());
     });
 
     // Connect to "activate" signal of `app`
     app.connect_activate(build_ui);
 
     // Run the application
-    app.run()
+    app.run_with_args(&[""])
 }
 fn build_ui(app: &Application) {
     // Create new window and present it
@@ -154,5 +170,30 @@ fn build_ui(app: &Application) {
     gtk4_layer_shell::set_anchor(&window, Edge::Right, true);
     gtk4_layer_shell::set_anchor(&window, Edge::Top, true);
 
+    let key_event_controller = gtk::EventControllerKey::new();
+    let windowrc = Rc::new(window.clone());
+    key_event_controller.connect_key_pressed(move |_controller, key, _keycode, _state| match key {
+        Key::Escape => {
+            windowrc.close();
+
+            gtk::Inhibit(true)
+        }
+        _ => gtk::Inhibit(false),
+    });
+
+    window.add_controller(key_event_controller);
     window.present();
+}
+
+fn load_css(css_string: String) {
+    let context_provider = gtk::CssProvider::new();
+    if css_string != "" {
+        context_provider.load_from_path(css_string);
+    }
+
+    gtk::style_context_add_provider_for_display(
+        &gtk::gdk::Display::default().unwrap(),
+        &context_provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
 }
