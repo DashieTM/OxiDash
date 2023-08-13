@@ -1,10 +1,11 @@
 use std::cell::Cell;
 
 use crate::utils::NotificationButton;
+use adw::subclass::prelude::AdwApplicationWindowImpl;
 use glib::subclass::InitializingObject;
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate};
+use gtk::{glib, Button, CompositeTemplate, Label, Overflow, Picture};
 use gtk::{prelude::*, Box, Text};
 
 use crate::{get_notifications, Notifications};
@@ -39,7 +40,7 @@ impl Window {
         }
     }
     fn delete_specific_notification(&self, button: &NotificationButton) {
-        self.notibox.remove(&button.imp().text.take());
+        self.notibox.remove(&button.imp().notibox.take());
         self.notibox.remove(button);
     }
 }
@@ -51,7 +52,7 @@ impl ObjectSubclass for Window {
     // `NAME` needs to match `class` attribute of template
     const NAME: &'static str = "MyGtkAppWindow";
     type Type = super::Window;
-    type ParentType = gtk::ApplicationWindow;
+    type ParentType = adw::ApplicationWindow;
 
     fn class_init(klass: &mut Self::Class) {
         NotificationButton::ensure_type();
@@ -77,15 +78,40 @@ impl ObjectImpl for Window {
         let notifications = notiref.data.get(0).unwrap();
 
         for notification in notifications.iter() {
-            let text = Text::new();
-            text.set_text(&notification.message.data);
-            self.notibox.append(&text);
+            let notibox = Box::new(gtk::Orientation::Horizontal, 5);
+            let textbox = Box::new(gtk::Orientation::Vertical, 5);
+            textbox.set_width_request(380);
+            let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);
+
+            let text = Label::new(Some(&notification.body.data));
+            text.set_xalign(0.0);
+            text.set_wrap(true);
+            let summary = Label::new(Some(&notification.summary.data));
+            summary.set_xalign(0.0);
+            summary.set_wrap(true);
+            let appname = Label::new(Some(&notification.appname.data));
+            appname.set_xalign(0.0);
+            appname.set_wrap(true);
+
+            let picture = Picture::new();
+            picture.set_filename(notification.icon_path.data.clone().into());
+
+            picbuttonbox.append(&picture);
+            textbox.append(&appname);
+            textbox.append(&summary);
+            textbox.append(&text);
+
+            self.notibox.append(&notibox);
             let button = NotificationButton::new();
-            button.imp().text.set(text);
+            button.imp().notibox.set(notibox.clone());
             button.connect_clicked(clone!(@weak self as window => move |button| {
                 window.delete_specific_notification(button);
             }));
-            self.notibox.append(&button);
+
+            picbuttonbox.append(&button);
+            notibox.append(&textbox);
+            notibox.append(&picbuttonbox);
+            self.notibox.append(&notibox);
         }
 
         // Connect to "clicked" signal of `button`
@@ -117,4 +143,6 @@ impl WidgetImpl for Window {}
 impl WindowImpl for Window {}
 
 // Trait shared by all application windows
+impl AdwApplicationWindowImpl for Window {}
+
 impl ApplicationWindowImpl for Window {}

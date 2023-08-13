@@ -1,13 +1,13 @@
 use std::cell::Cell;
 
-use gtk::{glib, Text};
+use gtk::{glib, Box};
 use gtk::subclass::prelude::*;
 
 
 // Object holding the state
 #[derive(Default)]
 pub struct NotificationButton{
-    pub text: Cell<Text>,
+    pub notibox: Cell<Box>,
 }
 
 // The central trait for subclassing a GObject

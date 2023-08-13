@@ -7,6 +7,7 @@ use gtk::gio::SimpleAction;
 use gtk::glib::clone;
 use gtk::prelude::*;
 use gtk::{gio, glib, Application};
+use gtk4_layer_shell::Edge;
 use serde_derive::{Deserialize, Serialize};
 use window::Window;
 
@@ -106,6 +107,10 @@ fn main() -> glib::ExitCode {
     // Create a new application
     let app = Application::builder().application_id(APP_ID).build();
 
+    app.connect_startup(move |_| {
+        adw::init().unwrap();
+    });
+
     // Connect to "activate" signal of `app`
     app.connect_activate(build_ui);
 
@@ -146,6 +151,8 @@ fn build_ui(app: &Application) {
     // gtk4_layer_shell::set_keyboard_interactivity(&window, true);
     gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::Exclusive);
     gtk4_layer_shell::set_layer(&window, gtk4_layer_shell::Layer::Overlay);
+    gtk4_layer_shell::set_anchor(&window, Edge::Right, true);
+    gtk4_layer_shell::set_anchor(&window, Edge::Top, true);
 
     window.present();
 }
