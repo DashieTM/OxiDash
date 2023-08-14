@@ -2,6 +2,7 @@ mod utils;
 mod window;
 
 use directories_next as dirs;
+use gtk::subclass::prelude::ObjectSubclassIsExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -179,12 +180,19 @@ fn build_ui(app: &Application) {
     let delete_notifications = SimpleAction::new("delete_notifications", None);
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);
 
-    delete_notifications.connect_activate(|_, _| {
+    delete_notifications.connect_activate(clone!(@weak window => move |_, _| {
         Command::new("dunstctl")
             .arg("history-clear")
             .spawn()
             .expect("Could not use dunstctl");
-    });
+        loop {
+            let child = window.imp().notibox.first_child();
+            if (child).is_none() {
+                break;
+            }
+            window.imp().notibox.remove(&child.unwrap());
+        }
+    }));
 
     do_not_disturb.connect_activate(|_, _| {
         Command::new("dunstctl")
@@ -214,7 +222,18 @@ fn build_ui(app: &Application) {
     key_event_controller.connect_key_pressed(move |_controller, key, _keycode, _state| match key {
         Key::Escape => {
             windowrc.close();
-
+            gtk::Inhibit(true)
+        }
+        Key::_1 => {
+            do_not_disturb.activate(None);
+            gtk::Inhibit(true)
+        }
+        Key::_2 => {
+            windowrc.close();
+            gtk::Inhibit(true)
+        }
+        Key::_3 => {
+            delete_notifications.activate(None);
             gtk::Inhibit(true)
         }
         _ => gtk::Inhibit(false),

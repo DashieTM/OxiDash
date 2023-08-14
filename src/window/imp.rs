@@ -27,18 +27,7 @@ pub struct Window {
 }
 // ANCHOR_END: object
 
-#[gtk::template_callbacks]
 impl Window {
-    #[template_callback]
-    fn delete_notifications(&self, _: Button) {
-        loop {
-            let child = self.notibox.first_child();
-            if (child).is_none() {
-                break;
-            }
-            self.notibox.remove(&child.unwrap());
-        }
-    }
     fn delete_specific_notification(&self, button: &NotificationButton) {
         self.notibox.remove(&button.imp().notibox.take());
         self.notibox.remove(button);
@@ -57,7 +46,6 @@ impl ObjectSubclass for Window {
     fn class_init(klass: &mut Self::Class) {
         NotificationButton::ensure_type();
         klass.bind_template();
-        klass.bind_template_callbacks();
     }
 
     fn instance_init(obj: &InitializingObject<Self>) {
