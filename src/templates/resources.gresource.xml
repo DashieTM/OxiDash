@@ -3,4 +3,7 @@
   <gresource prefix="/org/dashie/oxidash/">
     <file compressed="true" preprocess="xml-stripblanks">window.ui</file>
   </gresource>
+  <gresource prefix="/org/dashie/oxidash/icons/scalable/actions">
+    <file preprocess="xml-stripblanks">small-x-symbolic.svg</file>
+  </gresource>
 </gresources>

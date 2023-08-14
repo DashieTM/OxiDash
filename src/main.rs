@@ -172,6 +172,7 @@ fn main() -> glib::ExitCode {
 
 fn build_ui(app: &Application) {
     let window = Window::new(app);
+    window.set_vexpand_set(true);
     let action_close = SimpleAction::new("close", None);
     let delete_notifications = SimpleAction::new("delete_notifications", None);
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);

@@ -5,7 +5,7 @@ use adw::subclass::prelude::AdwApplicationWindowImpl;
 use glib::subclass::InitializingObject;
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate, Label, Picture};
+use gtk::{glib, Button, CompositeTemplate, Label, Picture, ScrolledWindow, PolicyType};
 use gtk::{prelude::*, Box};
 
 use crate::{get_notifications, Notifications};
@@ -21,6 +21,8 @@ pub struct Window {
     pub clear_history_button: TemplateChild<Button>,
     #[template_child]
     pub notibox: TemplateChild<Box>,
+    #[template_child]
+    pub scrolled_window: TemplateChild<ScrolledWindow>,
     notifications: Cell<Notifications>,
 }
 
@@ -51,6 +53,7 @@ impl ObjectImpl for Window {
     fn constructed(&self) {
         self.parent_constructed();
         self.notifications.set(get_notifications());
+        self.scrolled_window.set_hscrollbar_policy(PolicyType::Never);
 
         let notiref = self.notifications.take();
         let notifications = notiref.data.get(0).unwrap();
@@ -58,6 +61,7 @@ impl ObjectImpl for Window {
         for notification in notifications.iter() {
             let notibox = Box::new(gtk::Orientation::Horizontal, 5);
             notibox.set_widget_name("Notification");
+            notibox.set_css_classes(&["Notification"]);
             let textbox = Box::new(gtk::Orientation::Vertical, 5);
             textbox.set_width_request(380);
             let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);
@@ -82,6 +86,7 @@ impl ObjectImpl for Window {
 
             self.notibox.append(&notibox);
             let button = NotificationButton::new();
+            button.set_icon_name("small-x-symbolic");
             button.imp().notibox.set(notibox.clone());
             button.connect_clicked(clone!(@weak self as window => move |button| {
                 window.delete_specific_notification(button);
