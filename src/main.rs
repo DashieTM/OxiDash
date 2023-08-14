@@ -117,6 +117,13 @@ fn create_config_dir() -> PathBuf {
     let file_path = config_dir.join("style.css");
     if !file_path.exists() {
         fs::File::create(&file_path).expect("Could not create css config file");
+        fs::write(
+            &file_path,
+            "#MainWindow {
+                border-radius: 10px;
+            }",
+        )
+        .expect("Could not write default values");
     }
     file_path
 }
