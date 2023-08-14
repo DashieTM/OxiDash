@@ -1,13 +1,15 @@
 mod utils;
 mod window;
 
-use std::env;
+use directories_next as dirs;
+use std::path::PathBuf;
 use std::process::Command;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
+use std::{env, fs};
 
 use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
-use gtk::glib::clone;
+use gtk::glib::{clone, ExitCode};
 use gtk::prelude::*;
 use gtk::{gio, glib, Application};
 use gtk4_layer_shell::Edge;
@@ -102,18 +104,48 @@ fn get_notifications() -> Notifications {
     return notifications;
 }
 
+fn create_config_dir() -> PathBuf {
+    let maybe_config_dir = dirs::ProjectDirs::from("com", "dashie", "oxidash");
+    if maybe_config_dir.is_none() {
+        panic!("Could not get config directory");
+    }
+    let config = maybe_config_dir.unwrap();
+    let config_dir = config.config_dir();
+    if !config_dir.exists() {
+        fs::create_dir(config_dir).expect("Could not create config directory");
+    }
+    let file_path = config_dir.join("style.css");
+    if !file_path.exists() {
+        fs::File::create(&file_path).expect("Could not create css config file");
+    }
+    file_path
+}
+
 fn main() -> glib::ExitCode {
     let mut css_string = "".to_string();
     let args: Vec<String> = env::args().collect();
-    if args.len() > 2 {
+    if args.len() > 1 {
         let mut argiter = args.iter();
         argiter.next().unwrap();
-        if argiter.next().unwrap() == "--css" {
-            let next = argiter.next();
-            if next.is_some() {
-                css_string = next.unwrap().clone();
+        match argiter.next().unwrap().as_str() {
+            "--css" => {
+                let next = argiter.next();
+                if next.is_some() {
+                    css_string = next.unwrap().clone();
+                }
+            }
+            _ => {
+                print!(
+                    "usage:
+    --css: use a specific path to load a css style sheet.
+    --help: show this message.\n"
+                );
+                return ExitCode::FAILURE;
             }
         }
+    } else {
+        css_string = create_config_dir().to_str().unwrap().into();
+        println!("{css_string}");
     }
     // Register and include resources
     gio::resources_register_include!("src.templates.gresource")
@@ -124,7 +156,7 @@ fn main() -> glib::ExitCode {
 
     app.connect_startup(move |_| {
         adw::init().unwrap();
-        load_css(css_string.clone());
+        load_css(&css_string);
     });
 
     // Connect to "activate" signal of `app`
@@ -185,7 +217,7 @@ fn build_ui(app: &Application) {
     window.present();
 }
 
-fn load_css(css_string: String) {
+fn load_css(css_string: &String) {
     let context_provider = gtk::CssProvider::new();
     if css_string != "" {
         context_provider.load_from_path(css_string);

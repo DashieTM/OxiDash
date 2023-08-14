@@ -5,8 +5,8 @@ use adw::subclass::prelude::AdwApplicationWindowImpl;
 use glib::subclass::InitializingObject;
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate, Label, Overflow, Picture};
-use gtk::{prelude::*, Box, Text};
+use gtk::{glib, Button, CompositeTemplate, Label, Picture};
+use gtk::{prelude::*, Box};
 
 use crate::{get_notifications, Notifications};
 
