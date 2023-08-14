@@ -155,11 +155,10 @@ fn main() -> glib::ExitCode {
         css_string = create_config_dir().to_str().unwrap().into();
         println!("{css_string}");
     }
-    // Register and include resources
+
     gio::resources_register_include!("src.templates.gresource")
         .expect("Failed to register resources.");
 
-    // Create a new application
     let app = Application::builder().application_id(APP_ID).build();
 
     app.connect_startup(move |_| {
@@ -167,14 +166,11 @@ fn main() -> glib::ExitCode {
         load_css(&css_string);
     });
 
-    // Connect to "activate" signal of `app`
     app.connect_activate(build_ui);
-
-    // Run the application
     app.run_with_args(&[""])
 }
+
 fn build_ui(app: &Application) {
-    // Create new window and present it
     let window = Window::new(app);
     let action_close = SimpleAction::new("close", None);
     let delete_notifications = SimpleAction::new("delete_notifications", None);
@@ -211,7 +207,6 @@ fn build_ui(app: &Application) {
     window.add_action(&do_not_disturb);
 
     gtk4_layer_shell::init_for_window(&window);
-    // gtk4_layer_shell::set_keyboard_interactivity(&window, true);
     gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::Exclusive);
     gtk4_layer_shell::set_layer(&window, gtk4_layer_shell::Layer::Overlay);
     gtk4_layer_shell::set_anchor(&window, Edge::Right, true);

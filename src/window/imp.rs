@@ -10,8 +10,6 @@ use gtk::{prelude::*, Box};
 
 use crate::{get_notifications, Notifications};
 
-// ANCHOR: object
-// Object holding the state
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/dashie/oxidash/window.ui")]
 pub struct Window {
@@ -25,7 +23,6 @@ pub struct Window {
     pub notibox: TemplateChild<Box>,
     notifications: Cell<Notifications>,
 }
-// ANCHOR_END: object
 
 impl Window {
     fn delete_specific_notification(&self, button: &NotificationButton) {
@@ -34,11 +31,8 @@ impl Window {
     }
 }
 
-// ANCHOR: subclass
-// The central trait for subclassing a GObject
 #[glib::object_subclass]
 impl ObjectSubclass for Window {
-    // `NAME` needs to match `class` attribute of template
     const NAME: &'static str = "MyGtkAppWindow";
     type Type = super::Window;
     type ParentType = adw::ApplicationWindow;
@@ -52,13 +46,9 @@ impl ObjectSubclass for Window {
         obj.init_template();
     }
 }
-// ANCHOR_END: subclass
 
-// ANCHOR: object_impl
-// Trait shared by all GObjects
 impl ObjectImpl for Window {
     fn constructed(&self) {
-        // Call "constructed" on parent
         self.parent_constructed();
         self.notifications.set(get_notifications());
 
@@ -103,7 +93,6 @@ impl ObjectImpl for Window {
             self.notibox.append(&notibox);
         }
 
-        // Connect to "clicked" signal of `button`
         self.button.connect_clicked(move |button| {
             button
                 .activate_action("win.do_not_disturb", None)
@@ -123,15 +112,11 @@ impl ObjectImpl for Window {
         });
     }
 }
-// ANCHOR_END: object_impl
 
-// Trait shared by all widgets
 impl WidgetImpl for Window {}
 
-// Trait shared by all windows
 impl WindowImpl for Window {}
 
-// Trait shared by all application windows
 impl AdwApplicationWindowImpl for Window {}
 
 impl ApplicationWindowImpl for Window {}
