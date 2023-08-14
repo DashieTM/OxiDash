@@ -6,6 +6,7 @@ use gtk::{glib, Box};
 #[derive(Default)]
 pub struct NotificationButton {
     pub notibox: Cell<Box>,
+    pub notification_id: Cell<i32>,
 }
 
 #[glib::object_subclass]

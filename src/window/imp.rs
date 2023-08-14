@@ -1,11 +1,12 @@
 use std::cell::Cell;
+use std::process::Command;
 
 use crate::utils::NotificationButton;
 use adw::subclass::prelude::AdwApplicationWindowImpl;
 use glib::subclass::InitializingObject;
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate, Label, Picture, ScrolledWindow, PolicyType};
+use gtk::{glib, Button, CompositeTemplate, Label, Picture, PolicyType, ScrolledWindow};
 use gtk::{prelude::*, Box};
 
 use crate::{get_notifications, Notifications};
@@ -28,6 +29,11 @@ pub struct Window {
 
 impl Window {
     fn delete_specific_notification(&self, button: &NotificationButton) {
+        Command::new("dunstctl")
+            .arg("history-rm")
+            .arg(&button.imp().notification_id.take().to_string())
+            .spawn()
+            .expect("Could not run dunstctl");
         self.notibox.remove(&button.imp().notibox.take());
         self.notibox.remove(button);
     }
@@ -53,7 +59,8 @@ impl ObjectImpl for Window {
     fn constructed(&self) {
         self.parent_constructed();
         self.notifications.set(get_notifications());
-        self.scrolled_window.set_hscrollbar_policy(PolicyType::Never);
+        self.scrolled_window
+            .set_hscrollbar_policy(PolicyType::Never);
 
         let notiref = self.notifications.take();
         let notifications = notiref.data.get(0).unwrap();
@@ -86,6 +93,7 @@ impl ObjectImpl for Window {
 
             self.notibox.append(&notibox);
             let button = NotificationButton::new();
+            button.imp().notification_id.set(notification.id.data);
             button.set_icon_name("small-x-symbolic");
             button.imp().notibox.set(notibox.clone());
             button.connect_clicked(clone!(@weak self as window => move |button| {
