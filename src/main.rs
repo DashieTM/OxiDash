@@ -228,7 +228,6 @@ fn build_ui(app: &Application) {
     gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
 
     gesture.connect_pressed(move |gesture, _, _, _| {
-        gesture.set_state(gtk::EventSequenceState::Claimed);
         if !windowrc1.imp().has_pointer.get() {
             windowrc1.close();
         }
