@@ -5,7 +5,7 @@
     <property name="hexpand">false</property>
     <property name="default-width">400</property>
     <child>
-      <object class="GtkBox">
+      <object class="GtkBox" id="mainbox">
         <property name="name">MainBox</property>
         <property name="orientation">vertical</property>
         <property name="margin-top">12</property>

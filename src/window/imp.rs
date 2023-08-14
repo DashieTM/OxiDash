@@ -15,6 +15,8 @@ use crate::{get_notifications, Notifications};
 #[template(resource = "/org/dashie/oxidash/window.ui")]
 pub struct Window {
     #[template_child]
+    pub mainbox: TemplateChild<Box>,
+    #[template_child]
     pub button: TemplateChild<Button>,
     #[template_child]
     pub exit_button: TemplateChild<Button>,
@@ -25,6 +27,7 @@ pub struct Window {
     #[template_child]
     pub scrolled_window: TemplateChild<ScrolledWindow>,
     notifications: Cell<Notifications>,
+    pub has_pointer: Cell<bool>,
 }
 
 impl Window {
@@ -61,6 +64,20 @@ impl ObjectImpl for Window {
         self.notifications.set(get_notifications());
         self.scrolled_window
             .set_hscrollbar_policy(PolicyType::Never);
+
+        let motion_event_controller = gtk::EventControllerMotion::new();
+        motion_event_controller.connect_enter(clone!(@weak self as window => move |_,_,_| {
+            window.has_pointer.set(true);
+        }));
+        motion_event_controller.connect_leave(clone!(@weak self as window => move |_| {
+            window.has_pointer.set(false);
+        }));
+        let focus_event_controller = gtk::EventControllerMotion::new();
+        focus_event_controller.connect_leave(clone!(@weak self as window => move |_| {
+            window.exit_button.activate_action("win.close", None).expect("wat");
+        }));
+        self.mainbox.add_controller(focus_event_controller);
+        self.mainbox.add_controller(motion_event_controller);
 
         let notiref = self.notifications.take();
         let notifications = notiref.data.get(0).unwrap();

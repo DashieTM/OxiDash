@@ -3,6 +3,7 @@ mod window;
 
 use directories_next as dirs;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -208,16 +209,35 @@ fn build_ui(app: &Application) {
     window.add_action(&do_not_disturb);
 
     gtk4_layer_shell::init_for_window(&window);
-    gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::Exclusive);
+    gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::OnDemand);
+    gtk4_layer_shell::auto_exclusive_zone_enable(&window);
     gtk4_layer_shell::set_layer(&window, gtk4_layer_shell::Layer::Overlay);
     gtk4_layer_shell::set_anchor(&window, Edge::Right, true);
     gtk4_layer_shell::set_anchor(&window, Edge::Top, true);
 
-    let key_event_controller = gtk::EventControllerKey::new();
     let windowrc = Rc::new(window.clone());
+    let windowrc1 = windowrc.clone();
+    let windowrc2 = windowrc.clone();
+
+    let focus_event_controller = gtk::EventControllerFocus::new();
+    focus_event_controller.connect_leave(move |_| {
+        windowrc.close();
+    });
+
+    let gesture = gtk::GestureClick::new();
+    gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
+
+    gesture.connect_pressed(move |gesture, _, _, _| {
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        if !windowrc1.imp().has_pointer.get() {
+            windowrc1.close();
+        }
+    });
+
+    let key_event_controller = gtk::EventControllerKey::new();
     key_event_controller.connect_key_pressed(move |_controller, key, _keycode, _state| match key {
         Key::Escape => {
-            windowrc.close();
+            windowrc2.close();
             gtk::Inhibit(true)
         }
         Key::_1 => {
@@ -225,7 +245,7 @@ fn build_ui(app: &Application) {
             gtk::Inhibit(true)
         }
         Key::_2 => {
-            windowrc.close();
+            windowrc2.close();
             gtk::Inhibit(true)
         }
         Key::_3 => {
@@ -236,6 +256,8 @@ fn build_ui(app: &Application) {
     });
 
     window.add_controller(key_event_controller);
+    window.add_controller(focus_event_controller);
+    window.add_controller(gesture);
     window.present();
 }
 
