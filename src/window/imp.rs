@@ -1,15 +1,18 @@
 use std::cell::Cell;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use crate::utils::NotificationButton;
 use adw::subclass::prelude::AdwApplicationWindowImpl;
+use dbus::blocking::Connection;
 use glib::subclass::InitializingObject;
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
 use gtk::{glib, Button, CompositeTemplate, Label, Picture, PolicyType, ScrolledWindow};
 use gtk::{prelude::*, Box};
 
-use crate::{get_notifications, Notifications};
+use crate::{get_notifications, Notification};
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/dashie/oxidash/window.ui")]
@@ -26,17 +29,26 @@ pub struct Window {
     pub notibox: TemplateChild<Box>,
     #[template_child]
     pub scrolled_window: TemplateChild<ScrolledWindow>,
-    notifications: Cell<Notifications>,
+    notifications: Cell<Vec<Notification>>,
     pub has_pointer: Cell<bool>,
 }
 
 impl Window {
     fn delete_specific_notification(&self, button: &NotificationButton) {
-        Command::new("dunstctl")
-            .arg("history-rm")
-            .arg(&button.imp().notification_id.take().to_string())
-            .spawn()
-            .expect("Could not run dunstctl");
+        let id = button.imp().notification_id.get();
+        thread::spawn(move || {
+            let conn = Connection::new_session().unwrap();
+            let proxy = conn.with_proxy(
+                "org.freedesktop.Notifications2",
+                "/org/freedesktop/Notifications2",
+                Duration::from_millis(1000),
+            );
+            let _: Result<(), dbus::Error> = proxy.method_call(
+                "org.freedesktop.Notifications2",
+                "RemoveNotification",
+                (id,),
+            );
+        });
         self.notibox.remove(&button.imp().notibox.take());
         self.notibox.remove(button);
     }
@@ -79,8 +91,8 @@ impl ObjectImpl for Window {
         self.mainbox.add_controller(focus_event_controller);
         self.mainbox.add_controller(motion_event_controller);
 
-        let notiref = self.notifications.take();
-        let notifications = notiref.data.get(0).unwrap();
+        let notifications = self.notifications.take();
+        // let notifications = notiref.get(0).unwrap();
 
         for notification in notifications.iter() {
             let notibox = Box::new(gtk::Orientation::Horizontal, 5);
@@ -90,18 +102,18 @@ impl ObjectImpl for Window {
             textbox.set_width_request(380);
             let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);
 
-            let text = Label::new(Some(&notification.body.data));
+            let text = Label::new(Some(&notification.body));
             text.set_xalign(0.0);
             text.set_wrap(true);
-            let summary = Label::new(Some(&notification.summary.data));
+            let summary = Label::new(Some(&notification.summary));
             summary.set_xalign(0.0);
             summary.set_wrap(true);
-            let appname = Label::new(Some(&notification.appname.data));
+            let appname = Label::new(Some(&notification.app_name));
             appname.set_xalign(0.0);
             appname.set_wrap(true);
 
             let picture = Picture::new();
-            picture.set_filename(notification.icon_path.data.clone().into());
+            picture.set_filename(notification.app_icon.clone().into());
 
             picbuttonbox.append(&picture);
             textbox.append(&appname);
@@ -110,7 +122,7 @@ impl ObjectImpl for Window {
 
             self.notibox.append(&notibox);
             let button = NotificationButton::new();
-            button.imp().notification_id.set(notification.id.data);
+            button.imp().notification_id.set(notification.replaces_id);
             button.set_icon_name("small-x-symbolic");
             button.imp().notibox.set(notibox.clone());
             button.connect_clicked(clone!(@weak self as window => move |button| {

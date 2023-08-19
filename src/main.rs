@@ -1,13 +1,16 @@
 mod utils;
 mod window;
 
+use dbus::arg;
+use dbus::blocking::Connection;
 use directories_next as dirs;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use std::cell::RefCell;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
-use std::{env, fs};
+use std::time::Duration;
+use std::{env, fs, thread};
 
 use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
@@ -15,95 +18,129 @@ use gtk::glib::{clone, ExitCode};
 use gtk::prelude::*;
 use gtk::{gio, glib, Application};
 use gtk4_layer_shell::Edge;
-use serde_derive::{Deserialize, Serialize};
 use window::Window;
 
 const APP_ID: &str = "org.dashie.oxidash";
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct Notifications {
-    data: Vec<Vec<Notification>>,
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Debug)]
+pub enum Urgency {
+    Low,
+    Normal,
+    Urgent,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Notification {
-    body: Body,
-    message: NotificationMessage,
-    summary: Summary,
-    appname: Appname,
-    category: Category,
-    icon_path: IconPath,
-    id: ID,
-    timestamp: TimeStamp,
-    timeout: Timeout,
-    progress: Progress,
+impl Urgency {
+    fn from_i32(value: i32) -> Result<Urgency, &'static str> {
+        match value {
+            1 => Ok(Urgency::Low),
+            2 => Ok(Urgency::Normal),
+            3 => Ok(Urgency::Urgent),
+            _ => Err("invalid number, only 1,2 or 3 allowed"),
+        }
+    }
+    fn to_i32(&self) -> i32 {
+        match self {
+            Urgency::Low => 1,
+            Urgency::Normal => 2,
+            Urgency::Urgent => 3,
+        }
+    }
+    pub fn to_str(&self) -> &str {
+        match self {
+            Urgency::Low => "NotificationLow",
+            Urgency::Normal => "NotificationNormal",
+            Urgency::Urgent => "NotificationUrgent",
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Body {
-    data: String,
+impl Display for Urgency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_i32())
+    }
+}
+#[derive(Eq, PartialEq, PartialOrd, Ord, Debug)]
+pub struct Notification {
+    pub app_name: String,
+    pub replaces_id: u32,
+    pub app_icon: String,
+    pub summary: String,
+    pub body: String,
+    pub actions: Vec<String>,
+    pub expire_timeout: i32,
+    pub urgency: Urgency,
+    pub image_path: String,
+    pub progress: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct NotificationMessage {
-    data: String,
+impl Notification {
+    pub fn create(
+        app_name: String,
+        replaces_id: u32,
+        app_icon: String,
+        summary: String,
+        body: String,
+        actions: Vec<String>,
+        expire_timeout: i32,
+        urgency: i32,
+        image_path: String,
+        progress: i32,
+    ) -> Self {
+        Self {
+            app_name,
+            replaces_id,
+            app_icon,
+            summary,
+            body,
+            actions,
+            expire_timeout,
+            urgency: Urgency::from_i32(urgency).unwrap_or_else(|_| Urgency::Low),
+            image_path,
+            progress,
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Summary {
-    data: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Appname {
-    data: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Category {
-    data: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct DefaultAction {
-    data: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct IconPath {
-    data: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ID {
-    data: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct TimeStamp {
-    data: i64,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Timeout {
-    data: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Progress {
-    data: i32,
-}
-
-fn get_notifications() -> Notifications {
-    let dunst = Command::new("dunstctl")
-        .arg("history")
-        .output()
-        .expect("dunstctl could not be run")
-        .stdout;
-    let notifications: Notifications =
-        serde_json::from_str(&String::from_utf8(dunst).expect("Could not parse json"))
-            .expect("Could not parse json");
-    return notifications;
+fn get_notifications() -> Vec<Notification> {
+    use dbus::blocking::Connection;
+    let mut notifications = Vec::new();
+    let conn = Connection::new_session().unwrap();
+    let proxy = conn.with_proxy(
+        "org.freedesktop.Notifications2",
+        "/org/freedesktop/Notifications2",
+        Duration::from_millis(1000),
+    );
+    let (res,): (
+        Vec<(
+            String,
+            u32,
+            String,
+            String,
+            String,
+            Vec<String>,
+            i32,
+            i32,
+            String,
+            i32,
+        )>,
+    ) = proxy
+        .method_call("org.freedesktop.Notifications2", "GetAllNotifications", ())
+        .unwrap_or_else(|_| (Vec::new(),));
+    for notification in res {
+        notifications.push(Notification::create(
+            notification.0,
+            notification.1,
+            notification.2,
+            notification.3,
+            notification.4,
+            notification.5,
+            notification.6,
+            notification.7,
+            notification.8,
+            notification.9,
+        ));
+    }
+    notifications
 }
 
 fn create_config_dir() -> PathBuf {
@@ -179,10 +216,16 @@ fn build_ui(app: &Application) {
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);
 
     delete_notifications.connect_activate(clone!(@weak window => move |_, _| {
-        Command::new("dunstctl")
-            .arg("history-clear")
-            .spawn()
-            .expect("Could not use dunstctl");
+        thread::spawn(|| {
+            let conn = Connection::new_session().unwrap();
+            let proxy = conn.with_proxy(
+                "org.freedesktop.Notifications2",
+                "/org/freedesktop/Notifications2",
+                Duration::from_millis(1000),
+            );
+            let _: Result<(), dbus::Error> =
+                proxy.method_call("org.freedesktop.Notifications2", "RemoveAllNotifications", ());
+        });
         loop {
             let child = window.imp().notibox.first_child();
             if (child).is_none() {
@@ -193,11 +236,16 @@ fn build_ui(app: &Application) {
     }));
 
     do_not_disturb.connect_activate(|_, _| {
-        Command::new("dunstctl")
-            .arg("set-paused")
-            .arg("toggle")
-            .spawn()
-            .expect("Could not use dunstctl");
+        thread::spawn(|| {
+            let conn = Connection::new_session().unwrap();
+            let proxy = conn.with_proxy(
+                "org.freedesktop.Notifications2",
+                "/org/freedesktop/Notifications2",
+                Duration::from_millis(1000),
+            );
+            let _: Result<(), dbus::Error> =
+                proxy.method_call("org.freedesktop.Notifications2", "DoNotDisturb", ());
+        });
     });
 
     action_close.connect_activate(clone!(@weak window => move |_, _| {
@@ -227,7 +275,7 @@ fn build_ui(app: &Application) {
     let gesture = gtk::GestureClick::new();
     gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
 
-    gesture.connect_pressed(move |gesture, _, _, _| {
+    gesture.connect_pressed(move |_gesture, _, _, _| {
         if !windowrc1.imp().has_pointer.get() {
             windowrc1.close();
         }
