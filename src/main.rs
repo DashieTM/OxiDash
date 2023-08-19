@@ -9,10 +9,12 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 use std::{env, fs, thread};
+use utils::listener::run;
+use window::imp::show_notification;
 
 use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
-use gtk::glib::{clone, ExitCode};
+use gtk::glib::{clone, ExitCode, MainContext};
 use gtk::prelude::*;
 use gtk::{gio, glib, Application};
 use gtk4_layer_shell::Edge;
@@ -57,6 +59,7 @@ impl Display for Urgency {
         write!(f, "{}", self.to_i32())
     }
 }
+
 #[derive(Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub struct Notification {
     pub app_name: String,
@@ -206,11 +209,17 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_ui(app: &Application) {
+    let (tx, rx) = MainContext::channel(glib::PRIORITY_DEFAULT);
+    thread::spawn(move || {
+        run(tx);
+    });
     let window = Window::new(app);
     window.set_vexpand_set(true);
     let action_close = SimpleAction::new("close", None);
     let delete_notifications = SimpleAction::new("delete_notifications", None);
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);
+
+    toggle_notification_center();
 
     delete_notifications.connect_activate(clone!(@weak window => move |_, _| {
         thread::spawn(|| {
@@ -246,6 +255,7 @@ fn build_ui(app: &Application) {
     });
 
     action_close.connect_activate(clone!(@weak window => move |_, _| {
+        toggle_notification_center();
         window.close();
     }));
 
@@ -263,9 +273,11 @@ fn build_ui(app: &Application) {
     let windowrc = Rc::new(window.clone());
     let windowrc1 = windowrc.clone();
     let windowrc2 = windowrc.clone();
+    let windowrc3 = windowrc.clone();
 
     let focus_event_controller = gtk::EventControllerFocus::new();
     focus_event_controller.connect_leave(move |_| {
+        toggle_notification_center();
         windowrc.close();
     });
 
@@ -273,6 +285,7 @@ fn build_ui(app: &Application) {
     gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
 
     gesture.connect_pressed(move |_gesture, _, _, _| {
+        toggle_notification_center();
         if !windowrc1.imp().has_pointer.get() {
             windowrc1.close();
         }
@@ -281,6 +294,7 @@ fn build_ui(app: &Application) {
     let key_event_controller = gtk::EventControllerKey::new();
     key_event_controller.connect_key_pressed(move |_controller, key, _keycode, _state| match key {
         Key::Escape => {
+            toggle_notification_center();
             windowrc2.close();
             gtk::Inhibit(true)
         }
@@ -289,6 +303,7 @@ fn build_ui(app: &Application) {
             gtk::Inhibit(true)
         }
         Key::_2 => {
+            toggle_notification_center();
             windowrc2.close();
             gtk::Inhibit(true)
         }
@@ -299,6 +314,10 @@ fn build_ui(app: &Application) {
         _ => gtk::Inhibit(false),
     });
 
+    rx.attach(None, move |notification| {
+        show_notification(&notification, &windowrc3.imp());
+        glib::Continue(true)
+    });
     window.add_controller(key_event_controller);
     window.add_controller(focus_event_controller);
     window.add_controller(gesture);
@@ -316,4 +335,21 @@ fn load_css(css_string: &String) {
         &context_provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
+}
+
+fn toggle_notification_center() {
+    let conn = Connection::new_session().unwrap();
+    let proxy = conn.with_proxy(
+        "org.freedesktop.Notifications2",
+        "/org/freedesktop/Notifications2",
+        Duration::from_millis(1000),
+    );
+    let res: Result<(bool,), dbus::Error> = proxy.method_call(
+        "org.freedesktop.Notifications2",
+        "ToggleNotificationCenter",
+        (),
+    );
+    if res.is_ok() {
+        println!("{}", res.unwrap().0);
+    }
 }

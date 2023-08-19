@@ -1,4 +1,4 @@
-mod imp;
+pub mod imp;
 
 use glib::Object;
 use gtk::{gio, glib, Application};

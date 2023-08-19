@@ -42,11 +42,8 @@ impl Window {
                 "/org/freedesktop/Notifications2",
                 Duration::from_millis(1000),
             );
-            let _: Result<(), dbus::Error> = proxy.method_call(
-                "org.freedesktop.Notifications2",
-                "RemoveNotification",
-                (id,),
-            );
+            let _: Result<(), dbus::Error> =
+                proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
         });
         self.notibox.remove(&button.imp().notibox.take());
         self.notibox.remove(button);
@@ -67,6 +64,47 @@ impl ObjectSubclass for Window {
     fn instance_init(obj: &InitializingObject<Self>) {
         obj.init_template();
     }
+}
+
+pub fn show_notification(notification: &Notification, window: &Window) -> Box {
+    let notibox = Box::new(gtk::Orientation::Horizontal, 5);
+    notibox.set_widget_name("Notification");
+    notibox.set_css_classes(&["Notification"]);
+    let textbox = Box::new(gtk::Orientation::Vertical, 5);
+    textbox.set_width_request(380);
+    let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);
+
+    let text = Label::new(Some(&notification.body));
+    text.set_xalign(0.0);
+    text.set_wrap(true);
+    let summary = Label::new(Some(&notification.summary));
+    summary.set_xalign(0.0);
+    summary.set_wrap(true);
+    let appname = Label::new(Some(&notification.app_name));
+    appname.set_xalign(0.0);
+    appname.set_wrap(true);
+
+    let picture = Picture::new();
+    picture.set_filename(notification.app_icon.clone().into());
+
+    picbuttonbox.append(&picture);
+    textbox.append(&appname);
+    textbox.append(&summary);
+    textbox.append(&text);
+
+    window.notibox.append(&notibox);
+    let button = NotificationButton::new();
+    button.imp().notification_id.set(notification.replaces_id);
+    button.set_icon_name("small-x-symbolic");
+    button.imp().notibox.set(notibox.clone());
+    button.connect_clicked(clone!(@weak window => move |button| {
+        window.delete_specific_notification(button);
+    }));
+
+    picbuttonbox.append(&button);
+    notibox.append(&textbox);
+    notibox.append(&picbuttonbox);
+    notibox
 }
 
 impl ObjectImpl for Window {
@@ -94,43 +132,7 @@ impl ObjectImpl for Window {
         // let notifications = notiref.get(0).unwrap();
 
         for notification in notifications.iter() {
-            let notibox = Box::new(gtk::Orientation::Horizontal, 5);
-            notibox.set_widget_name("Notification");
-            notibox.set_css_classes(&["Notification"]);
-            let textbox = Box::new(gtk::Orientation::Vertical, 5);
-            textbox.set_width_request(380);
-            let picbuttonbox = Box::new(gtk::Orientation::Vertical, 5);
-
-            let text = Label::new(Some(&notification.body));
-            text.set_xalign(0.0);
-            text.set_wrap(true);
-            let summary = Label::new(Some(&notification.summary));
-            summary.set_xalign(0.0);
-            summary.set_wrap(true);
-            let appname = Label::new(Some(&notification.app_name));
-            appname.set_xalign(0.0);
-            appname.set_wrap(true);
-
-            let picture = Picture::new();
-            picture.set_filename(notification.app_icon.clone().into());
-
-            picbuttonbox.append(&picture);
-            textbox.append(&appname);
-            textbox.append(&summary);
-            textbox.append(&text);
-
-            self.notibox.append(&notibox);
-            let button = NotificationButton::new();
-            button.imp().notification_id.set(notification.replaces_id);
-            button.set_icon_name("small-x-symbolic");
-            button.imp().notibox.set(notibox.clone());
-            button.connect_clicked(clone!(@weak self as window => move |button| {
-                window.delete_specific_notification(button);
-            }));
-
-            picbuttonbox.append(&button);
-            notibox.append(&textbox);
-            notibox.append(&picbuttonbox);
+            let notibox = show_notification(notification, &self);
             self.notibox.append(&notibox);
         }
 
