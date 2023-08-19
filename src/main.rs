@@ -1,13 +1,11 @@
 mod utils;
 mod window;
 
-use dbus::arg;
 use dbus::blocking::Connection;
 use directories_next as dirs;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use std::fmt::Display;
 use std::path::PathBuf;
-use std::process::Command;
 use std::rc::Rc;
 use std::time::Duration;
 use std::{env, fs, thread};
@@ -102,7 +100,6 @@ impl Notification {
 }
 
 fn get_notifications() -> Vec<Notification> {
-    use dbus::blocking::Connection;
     let mut notifications = Vec::new();
     let conn = Connection::new_session().unwrap();
     let proxy = conn.with_proxy(
