@@ -1,5 +1,5 @@
-mod notificationbutton;
 pub mod listener;
+mod notificationbutton;
 
 use glib::Object;
 use gtk::glib;
