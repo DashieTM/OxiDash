@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::time::Duration;
 use std::{env, fs, thread};
 use utils::listener::run;
-use window::imp::show_notification;
+use window::imp::{show_notification, resize_window};
 
 use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
@@ -106,8 +106,8 @@ fn get_notifications() -> Vec<Notification> {
     let mut notifications = Vec::new();
     let conn = Connection::new_session().unwrap();
     let proxy = conn.with_proxy(
-        "org.freedesktop.Notifications2",
-        "/org/freedesktop/Notifications2",
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
         Duration::from_millis(1000),
     );
     let (res,): (
@@ -124,7 +124,7 @@ fn get_notifications() -> Vec<Notification> {
             i32,
         )>,
     ) = proxy
-        .method_call("org.freedesktop.Notifications2", "GetAllNotifications", ())
+        .method_call("org.freedesktop.Notifications", "GetAllNotifications", ())
         .unwrap_or_else(|_| (Vec::new(),));
     for notification in res {
         notifications.push(Notification::create(
@@ -214,7 +214,8 @@ fn build_ui(app: &Application) {
         run(tx);
     });
     let window = Window::new(app);
-    window.set_vexpand_set(true);
+    window.set_vexpand(true);
+    window.set_default_size(300, 100);
     let action_close = SimpleAction::new("close", None);
     let delete_notifications = SimpleAction::new("delete_notifications", None);
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);
@@ -225,12 +226,12 @@ fn build_ui(app: &Application) {
         thread::spawn(|| {
             let conn = Connection::new_session().unwrap();
             let proxy = conn.with_proxy(
-                "org.freedesktop.Notifications2",
-                "/org/freedesktop/Notifications2",
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
                 Duration::from_millis(1000),
             );
             let _: Result<(), dbus::Error> =
-                proxy.method_call("org.freedesktop.Notifications2", "RemoveAllNotifications", ());
+                proxy.method_call("org.freedesktop.Notifications", "RemoveAllNotifications", ());
         });
         loop {
             let child = window.imp().notibox.first_child();
@@ -245,12 +246,12 @@ fn build_ui(app: &Application) {
         thread::spawn(|| {
             let conn = Connection::new_session().unwrap();
             let proxy = conn.with_proxy(
-                "org.freedesktop.Notifications2",
-                "/org/freedesktop/Notifications2",
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
                 Duration::from_millis(1000),
             );
             let _: Result<(), dbus::Error> =
-                proxy.method_call("org.freedesktop.Notifications2", "DoNotDisturb", ());
+                proxy.method_call("org.freedesktop.Notifications", "DoNotDisturb", ());
         });
     });
 
@@ -264,7 +265,7 @@ fn build_ui(app: &Application) {
     window.add_action(&do_not_disturb);
 
     gtk4_layer_shell::init_for_window(&window);
-    gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::OnDemand);
+    gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::Exclusive);
     gtk4_layer_shell::auto_exclusive_zone_enable(&window);
     gtk4_layer_shell::set_layer(&window, gtk4_layer_shell::Layer::Overlay);
     gtk4_layer_shell::set_anchor(&window, Edge::Right, true);
@@ -285,8 +286,8 @@ fn build_ui(app: &Application) {
     gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
 
     gesture.connect_pressed(move |_gesture, _, _, _| {
-        toggle_notification_center();
         if !windowrc1.imp().has_pointer.get() {
+            toggle_notification_center();
             windowrc1.close();
         }
     });
@@ -316,11 +317,13 @@ fn build_ui(app: &Application) {
 
     rx.attach(None, move |notification| {
         show_notification(&notification, &windowrc3.imp());
+        resize_window(&windowrc3);
         glib::Continue(true)
     });
     window.add_controller(key_event_controller);
     window.add_controller(focus_event_controller);
     window.add_controller(gesture);
+    resize_window(&window);
     window.present();
 }
 
@@ -340,12 +343,12 @@ fn load_css(css_string: &String) {
 fn toggle_notification_center() {
     let conn = Connection::new_session().unwrap();
     let proxy = conn.with_proxy(
-        "org.freedesktop.Notifications2",
-        "/org/freedesktop/Notifications2",
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
         Duration::from_millis(1000),
     );
     let res: Result<(bool,), dbus::Error> = proxy.method_call(
-        "org.freedesktop.Notifications2",
+        "org.freedesktop.Notifications",
         "ToggleNotificationCenter",
         (),
     );
