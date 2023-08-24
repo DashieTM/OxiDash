@@ -173,6 +173,11 @@ fn create_config_dir() -> PathBuf {
 }
 
 fn main() -> glib::ExitCode {
+    let toggle = toggle_notification_center();
+    if !toggle {
+        return glib::ExitCode::SUCCESS;
+    }
+
     let mut css_string = "".to_string();
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
@@ -196,7 +201,6 @@ fn main() -> glib::ExitCode {
         }
     } else {
         css_string = create_config_dir().to_str().unwrap().into();
-        println!("{css_string}");
     }
 
     gio::resources_register_include!("src.templates.gresource")
@@ -232,8 +236,6 @@ fn build_ui(app: &Application) {
     for notification in notifications {
         show_notification(&notification, &windowimp, id_map.clone());
     }
-
-    toggle_notification_center();
 
     delete_notifications.connect_activate(clone!(@weak window => move |_, _| {
         thread::spawn(|| {
@@ -330,7 +332,6 @@ fn build_ui(app: &Application) {
 
     rx.attach(None, move |notification| {
         if check_duplicates(&notification, map_clone.clone()) {
-            println!("trying to modify");
             modify_notification(notification, map_clone.clone());
         } else {
             show_notification(&notification, &windowrc3.imp(), map_clone.clone());
@@ -358,7 +359,7 @@ fn load_css(css_string: &String) {
     );
 }
 
-fn toggle_notification_center() {
+fn toggle_notification_center() -> bool {
     let conn = Connection::new_session().unwrap();
     let proxy = conn.with_proxy(
         "org.freedesktop.Notifications",
@@ -371,6 +372,7 @@ fn toggle_notification_center() {
         (),
     );
     if res.is_ok() {
-        println!("{}", res.unwrap().0);
+        return res.unwrap().0;
     }
+    false
 }

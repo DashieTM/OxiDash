@@ -84,26 +84,70 @@ pub fn modify_notification(
     let notibutton = map.get(&id).unwrap().imp();
     let notibox_borrow = notibutton.notibox.borrow_mut();
     let notibox = notibox_borrow.imp();
-    if notification.progress > 0 {
-        notibox
-            .progbar
-            .borrow_mut()
-            .set_fraction(notification.progress as f64 / 100.0);
+    let exists = notibox.has_progbar.get();
+    if notification.progress < 0 && exists {
+        notibox_borrow.remove(&notibox.progbar.take());
+        notibox.has_progbar.set(false);
+    } else if notification.progress > 0 {
+        let mut progbar = notibox.progbar.borrow_mut();
+        if !exists {
+            let newprog = ProgressBar::new();
+            *progbar = newprog;
+            notibox.has_progbar.set(true);
+        }
+        progbar.set_fraction(notification.progress as f64 / 100.0);
     }
-    let (text, css_classes) = class_from_html(notification.summary);
-    let text_borrow = notibox.summary.borrow_mut();
-    text_borrow.set_text(text.as_str());
-    text_borrow.set_css_classes(&[&"summary", &css_classes]);
-    let (text, css_classes) = class_from_html(notification.body);
-    let text_borrow = notibox.body.borrow_mut();
-    text_borrow.set_text(text.as_str());
-    text_borrow.set_css_classes(&[&"text", &css_classes]);
-    let image_borrow = notibox.image.borrow_mut();
-    set_image(
-        &notification.image_path,
-        &notification.app_icon,
-        &image_borrow,
-    );
+
+    let exists = notibox.has_summary.get();
+    if notification.summary == "" && exists {
+        notibox_borrow.remove(&notibox.summary.take());
+        notibox.has_summary.set(false);
+    } else if notification.summary != "" {
+        let (text, css_classes) = class_from_html(notification.summary);
+        let mut text_borrow = notibox.summary.borrow_mut();
+        if !exists {
+            *text_borrow = Label::new(None);
+            notibox_borrow.append(&*text_borrow);
+            notibox.has_summary.set(true);
+        }
+        text_borrow.set_text(text.as_str());
+        text_borrow.set_css_classes(&[&"summary", &css_classes]);
+    }
+
+    let exists = notibox.has_body.get();
+    if notification.body == "" && exists {
+        notibox_borrow.remove(&notibox.body.take());
+        notibox.has_body.set(false);
+    } else if notification.body != "" {
+        let (text, css_classes) = class_from_html(notification.body);
+        let mut text_borrow = notibox.body.borrow_mut();
+        if !exists {
+            *text_borrow = Label::new(None);
+            notibox_borrow.append(&*text_borrow);
+            notibox.has_body.set(true);
+        }
+        text_borrow.set_text(text.as_str());
+        text_borrow.set_css_classes(&[&"text", &css_classes]);
+    }
+
+    let exists = notibox.has_image.get();
+    if notification.image_path == "" && notification.app_icon == "" && exists {
+        notibox_borrow.remove(&notibox.image.take());
+        notibox.has_image.set(false);
+    } else {
+        let mut image_borrow = notibox.image.borrow_mut();
+        if !exists {
+            let img = Image::new();
+            *image_borrow = img;
+            notibox_borrow.append(&*image_borrow);
+            notibox.has_image.set(true);
+        }
+        set_image(
+            &notification.image_path,
+            &notification.app_icon,
+            &image_borrow,
+        );
+    }
 }
 
 pub fn show_notification(
@@ -129,6 +173,7 @@ pub fn show_notification(
     picbuttonbox.set_hexpand(false);
 
     if notification.body != "" {
+        notiimp.has_body.set(true);
         let (textstr, css_classes) = class_from_html(notification.body.clone());
         let text = Label::new(Some(&textstr));
         text.set_css_classes(&["text", &css_classes]);
@@ -140,13 +185,14 @@ pub fn show_notification(
         textbox.append(&*shared_text);
     }
     if notification.summary != "" {
+        notiimp.has_summary.set(true);
         let (textstr, css_classes) = class_from_html(notification.summary.clone());
         let summary = Label::new(Some(&textstr));
         summary.set_css_classes(&["summary", &css_classes]);
         summary.set_xalign(0.0);
         summary.set_wrap(true);
         summary.set_halign(gtk::Align::Center);
-        let mut shared_summary = notiimp.body.borrow_mut();
+        let mut shared_summary = notiimp.summary.borrow_mut();
         *shared_summary = summary;
         textbox.append(&*shared_summary);
     }
@@ -157,15 +203,17 @@ pub fn show_notification(
         appname.set_xalign(0.0);
         appname.set_wrap(true);
         appname.set_halign(gtk::Align::Center);
-        let mut shared_appname = notiimp.body.borrow_mut();
-        *shared_appname = appname;
-        textbox.append(&*shared_appname);
+        textbox.append(&appname);
     }
     basebox.append(&textbox);
 
     let image = Image::new();
     image.set_size_request(100, 100);
-    set_image(&notification.image_path, &notification.app_icon, &image);
+    notiimp.has_image.set(set_image(
+        &notification.image_path,
+        &notification.app_icon,
+        &image,
+    ));
     let mut shared_image = notiimp.image.borrow_mut();
     *shared_image = image;
     picbuttonbox.append(&*shared_image);
@@ -173,7 +221,7 @@ pub fn show_notification(
     notibox.append(&basebox);
     let progbar = ProgressBar::new();
     if notification.progress > -1 {
-        println!("{}", notification.progress);
+        notiimp.has_progbar.set(true);
         progbar.set_fraction(notification.progress as f64 / 100.0);
         let mut shared_progbar = notiimp.progbar.borrow_mut();
         *shared_progbar = progbar;
