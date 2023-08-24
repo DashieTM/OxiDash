@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 use std::time::Duration;
 use std::{env, fs, thread};
@@ -175,6 +176,11 @@ fn create_config_dir() -> PathBuf {
 fn main() -> glib::ExitCode {
     let toggle = toggle_notification_center();
     if !toggle {
+        Command::new("killall")
+            .arg("-9")
+            .arg("oxidash")
+            .spawn()
+            .expect("Could not close oxidash");
         return glib::ExitCode::SUCCESS;
     }
 
