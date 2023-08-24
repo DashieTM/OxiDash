@@ -1,8 +1,11 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 
+use crate::notibox::NotiBox;
 use crate::utils::NotificationButton;
 use adw::subclass::prelude::AdwApplicationWindowImpl;
 use dbus::blocking::Connection;
@@ -13,7 +16,7 @@ use gtk::subclass::prelude::*;
 use gtk::{glib, Button, CompositeTemplate, Image, Label, PolicyType, ProgressBar, ScrolledWindow};
 use gtk::{prelude::*, Box};
 
-use crate::{get_notifications, Notification};
+use crate::Notification;
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/dashie/oxidash/window.ui")]
@@ -30,13 +33,17 @@ pub struct Window {
     pub notibox: TemplateChild<Box>,
     #[template_child]
     pub scrolled_window: TemplateChild<ScrolledWindow>,
-    notifications: Cell<Vec<Notification>>,
     pub has_pointer: Cell<bool>,
 }
 
 impl Window {
-    fn delete_specific_notification(&self, button: &NotificationButton) {
+    fn delete_specific_notification(
+        &self,
+        button: &NotificationButton,
+        id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+    ) {
         let id = button.imp().notification_id.get();
+        id_map.borrow_mut().remove(&id);
         thread::spawn(move || {
             let conn = Connection::new_session().unwrap();
             let proxy = conn.with_proxy(
@@ -47,7 +54,7 @@ impl Window {
             let _: Result<(), dbus::Error> =
                 proxy.method_call("org.freedesktop.Notifications", "CloseNotification", (id,));
         });
-        self.notibox.remove(&button.imp().notibox.take());
+        self.notibox.remove(&*button.imp().notibox.take());
         self.notibox.remove(button);
     }
 }
@@ -68,8 +75,44 @@ impl ObjectSubclass for Window {
     }
 }
 
-pub fn show_notification(notification: &Notification, window: &Window) -> Box {
-    let notibox = Box::new(gtk::Orientation::Vertical, 5);
+pub fn modify_notification(
+    notification: Notification,
+    id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+) {
+    let id = notification.replaces_id;
+    let map = id_map.borrow_mut();
+    let notibutton = map.get(&id).unwrap().imp();
+    let notibox_borrow = notibutton.notibox.borrow_mut();
+    let notibox = notibox_borrow.imp();
+    if notification.progress > 0 {
+        notibox
+            .progbar
+            .borrow_mut()
+            .set_fraction(notification.progress as f64 / 100.0);
+    }
+    let (text, css_classes) = class_from_html(notification.summary);
+    let text_borrow = notibox.summary.borrow_mut();
+    text_borrow.set_text(text.as_str());
+    text_borrow.set_css_classes(&[&"summary", &css_classes]);
+    let (text, css_classes) = class_from_html(notification.body);
+    let text_borrow = notibox.body.borrow_mut();
+    text_borrow.set_text(text.as_str());
+    text_borrow.set_css_classes(&[&"text", &css_classes]);
+    let image_borrow = notibox.image.borrow_mut();
+    set_image(
+        &notification.image_path,
+        &notification.app_icon,
+        &image_borrow,
+    );
+}
+
+pub fn show_notification(
+    notification: &Notification,
+    window: &Window,
+    id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+) {
+    let notibox = Rc::new(NotiBox::new(gtk::Orientation::Vertical, 5));
+    let notiimp = notibox.imp();
     notibox.set_widget_name("Notification");
     notibox.set_css_classes(&["Notification"]);
     let basebox = Box::new(gtk::Orientation::Horizontal, 5);
@@ -86,40 +129,55 @@ pub fn show_notification(notification: &Notification, window: &Window) -> Box {
     picbuttonbox.set_hexpand(false);
 
     if notification.body != "" {
-        let text = Label::new(Some(&notification.body));
+        let (textstr, css_classes) = class_from_html(notification.body.clone());
+        let text = Label::new(Some(&textstr));
+        text.set_css_classes(&["text", &css_classes]);
         text.set_xalign(0.0);
         text.set_wrap(true);
         text.set_halign(gtk::Align::Center);
-        textbox.append(&text);
+        let mut shared_text = notiimp.body.borrow_mut();
+        *shared_text = text;
+        textbox.append(&*shared_text);
     }
     if notification.summary != "" {
-        let summary = Label::new(Some(&notification.summary));
+        let (textstr, css_classes) = class_from_html(notification.summary.clone());
+        let summary = Label::new(Some(&textstr));
+        summary.set_css_classes(&["summary", &css_classes]);
         summary.set_xalign(0.0);
         summary.set_wrap(true);
         summary.set_halign(gtk::Align::Center);
-        textbox.append(&summary);
+        let mut shared_summary = notiimp.body.borrow_mut();
+        *shared_summary = summary;
+        textbox.append(&*shared_summary);
     }
     if notification.app_name != "" {
-        let appname = Label::new(Some(&notification.app_name));
+        let (textstr, css_classes) = class_from_html(notification.app_name.clone());
+        let appname = Label::new(Some(&textstr));
+        appname.set_css_classes(&["app_name", &css_classes]);
         appname.set_xalign(0.0);
         appname.set_wrap(true);
         appname.set_halign(gtk::Align::Center);
-        textbox.append(&appname);
+        let mut shared_appname = notiimp.body.borrow_mut();
+        *shared_appname = appname;
+        textbox.append(&*shared_appname);
     }
     basebox.append(&textbox);
 
     let image = Image::new();
     image.set_size_request(100, 100);
-    if set_image(&notification.image_path, &notification.app_icon, &image) {
-        picbuttonbox.append(&image);
-    }
+    set_image(&notification.image_path, &notification.app_icon, &image);
+    let mut shared_image = notiimp.image.borrow_mut();
+    *shared_image = image;
+    picbuttonbox.append(&*shared_image);
 
     notibox.append(&basebox);
     let progbar = ProgressBar::new();
     if notification.progress > -1 {
         println!("{}", notification.progress);
         progbar.set_fraction(notification.progress as f64 / 100.0);
-        notibox.append(&progbar);
+        let mut shared_progbar = notiimp.progbar.borrow_mut();
+        *shared_progbar = progbar;
+        notibox.append(&*shared_progbar);
     }
 
     let buttonbox = Box::new(gtk::Orientation::Horizontal, 0);
@@ -134,18 +192,22 @@ pub fn show_notification(notification: &Notification, window: &Window) -> Box {
     button.set_size_request(50, 50);
     button.imp().notification_id.set(notification.replaces_id);
     button.set_icon_name("small-x-symbolic");
-    button.imp().notibox.set(notibox.clone());
-    button.connect_clicked(clone!(@weak window => move |button| {
-        window.delete_specific_notification(button);
+    button.connect_clicked(clone!(@weak id_map, @weak window => move |button| {
+        window.delete_specific_notification(button, id_map);
     }));
     button.set_valign(gtk::Align::Center);
     button.set_halign(gtk::Align::Center);
-    buttonbox.append(&button);
 
     picbuttonbox.append(&buttonbox);
     basebox.append(&picbuttonbox);
-    window.notibox.append(&notibox);
-    notibox
+    window.notibox.append(&*notibox);
+    let notibutton = Rc::new(button);
+    let mut notibox_borrow = notibutton.imp().notibox.borrow_mut();
+    *notibox_borrow = notibox.clone();
+    buttonbox.append(&*notibutton);
+    id_map
+        .borrow_mut()
+        .insert(notification.replaces_id, notibutton.clone());
 }
 
 pub fn resize_window(window: &crate::Window) {
@@ -166,10 +228,21 @@ pub fn resize_window(window: &crate::Window) {
     window.queue_resize();
 }
 
+pub fn check_duplicates(
+    notification: &Notification,
+    id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+) -> bool {
+    let borrow = id_map.borrow_mut();
+    let opt = borrow.get(&notification.replaces_id);
+    if opt.is_none() {
+        return false;
+    }
+    true
+}
+
 impl ObjectImpl for Window {
     fn constructed(&self) {
         self.parent_constructed();
-        self.notifications.set(get_notifications());
         self.scrolled_window
             .set_hscrollbar_policy(PolicyType::Never);
         self.scrolled_window
@@ -188,14 +261,6 @@ impl ObjectImpl for Window {
         }));
         self.mainbox.add_controller(focus_event_controller);
         self.mainbox.add_controller(motion_event_controller);
-
-        let notifications = self.notifications.take();
-        // let notifications = notiref.get(0).unwrap();
-
-        for notification in notifications.iter() {
-            let notibox = show_notification(notification, &self);
-            self.notibox.append(&notibox);
-        }
 
         self.button.connect_clicked(move |button| {
             button
@@ -224,6 +289,37 @@ impl WindowImpl for Window {}
 impl AdwApplicationWindowImpl for Window {}
 
 impl ApplicationWindowImpl for Window {}
+
+fn class_from_html(mut body: String) -> (String, String) {
+    let mut open = false;
+    let mut ret: &str = "";
+    for char in body.chars() {
+        if char == '<' && !open {
+            open = true;
+        } else if open {
+            ret = match char {
+                'b' => "bold",
+                'i' => "italic",
+                'u' => "underline",
+                'h' => "hyprlink",
+                _ => {
+                    ret = "";
+                    break;
+                }
+            };
+            break;
+        }
+    }
+    body.remove_matches("<b>");
+    body.remove_matches("</b>");
+    body.remove_matches("<i>");
+    body.remove_matches("</i>");
+    body.remove_matches("<a href=\">");
+    body.remove_matches("</a>");
+    body.remove_matches("<u>");
+    body.remove_matches("</u>");
+    (body, String::from(ret))
+}
 
 fn set_image(picture: &String, icon: &String, image: &Image) -> bool {
     let mut pixbuf: Option<Pixbuf> = None;

@@ -1,16 +1,21 @@
+#![feature(string_remove_matches)]
+mod notibox;
 mod utils;
 mod window;
 
 use dbus::blocking::Connection;
 use directories_next as dirs;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 use std::{env, fs, thread};
 use utils::listener::run;
-use window::imp::{show_notification, resize_window};
+use utils::NotificationButton;
+use window::imp::{check_duplicates, modify_notification, resize_window, show_notification};
 
 use gtk::gdk::Key;
 use gtk::gio::SimpleAction;
@@ -220,6 +225,14 @@ fn build_ui(app: &Application) {
     let delete_notifications = SimpleAction::new("delete_notifications", None);
     let do_not_disturb = SimpleAction::new("do_not_disturb", None);
 
+    let id_map = Rc::new(RefCell::new(HashMap::<u32, Rc<NotificationButton>>::new()));
+    let map_clone = id_map.clone();
+    let notifications = get_notifications();
+    let windowimp = window.imp();
+    for notification in notifications {
+        show_notification(&notification, &windowimp, id_map.clone());
+    }
+
     toggle_notification_center();
 
     delete_notifications.connect_activate(clone!(@weak window => move |_, _| {
@@ -316,8 +329,13 @@ fn build_ui(app: &Application) {
     });
 
     rx.attach(None, move |notification| {
-        show_notification(&notification, &windowrc3.imp());
-        resize_window(&windowrc3);
+        if check_duplicates(&notification, map_clone.clone()) {
+            println!("trying to modify");
+            modify_notification(notification, map_clone.clone());
+        } else {
+            show_notification(&notification, &windowrc3.imp(), map_clone.clone());
+            resize_window(&windowrc3);
+        }
         glib::Continue(true)
     });
     window.add_controller(key_event_controller);

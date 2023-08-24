@@ -1,11 +1,14 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
+use gtk::glib;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Box};
+
+use crate::notibox::NotiBox;
 
 #[derive(Default)]
 pub struct NotificationButton {
-    pub notibox: Cell<Box>,
+    pub notibox: RefCell<Rc<NotiBox>>,
     pub notification_id: Cell<u32>,
 }
 
