@@ -28,6 +28,17 @@ use window::Window;
 
 const APP_ID: &str = "org.dashie.oxidash";
 
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ImageData {
+    pub width: i32,
+    pub height: i32,
+    pub rowstride: i32,
+    pub has_alpha: bool,
+    pub bits_per_sample: i32,
+    pub channels: i32,
+    pub data: Vec<u8>,
+}
+
 #[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub enum Urgency {
     Low,
@@ -78,6 +89,7 @@ pub struct Notification {
     pub urgency: Urgency,
     pub image_path: String,
     pub progress: i32,
+    pub image_data: ImageData,
 }
 
 impl Notification {
@@ -92,6 +104,7 @@ impl Notification {
         urgency: i32,
         image_path: String,
         progress: i32,
+        image_data: ImageData,
     ) -> Self {
         Self {
             app_name,
@@ -104,6 +117,7 @@ impl Notification {
             urgency: Urgency::from_i32(urgency).unwrap_or_else(|_| Urgency::Low),
             image_path,
             progress,
+            image_data,
         }
     }
 }
@@ -128,11 +142,22 @@ fn get_notifications() -> Vec<Notification> {
             i32,
             String,
             i32,
+            (i32, i32, i32, bool, i32, i32, Vec<u8>),
         )>,
     ) = proxy
         .method_call("org.freedesktop.Notifications", "GetAllNotifications", ())
         .unwrap_or_else(|_| (Vec::new(),));
     for notification in res {
+        let raw_data = notification.10;
+        let image_data = ImageData {
+            width: raw_data.0,
+            height: raw_data.1,
+            rowstride: raw_data.2,
+            has_alpha: raw_data.3,
+            bits_per_sample: raw_data.4,
+            channels: raw_data.5,
+            data: raw_data.6,
+        };
         notifications.push(Notification::create(
             notification.0,
             notification.1,
@@ -144,6 +169,7 @@ fn get_notifications() -> Vec<Notification> {
             notification.7,
             notification.8,
             notification.9,
+            image_data,
         ));
     }
     notifications

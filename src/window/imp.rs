@@ -16,7 +16,7 @@ use gtk::subclass::prelude::*;
 use gtk::{glib, Button, CompositeTemplate, Image, Label, PolicyType, ProgressBar, ScrolledWindow};
 use gtk::{prelude::*, Box};
 
-use crate::Notification;
+use crate::{ImageData, Notification};
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/dashie/oxidash/window.ui")]
@@ -143,6 +143,7 @@ pub fn modify_notification(
             notibox.has_image.set(true);
         }
         set_image(
+            &notification.image_data,
             &notification.image_path,
             &notification.app_icon,
             &image_borrow,
@@ -210,6 +211,7 @@ pub fn show_notification(
     let image = Image::new();
     image.set_size_request(100, 100);
     notiimp.has_image.set(set_image(
+        &notification.image_data,
         &notification.image_path,
         &notification.app_icon,
         &image,
@@ -369,7 +371,7 @@ fn class_from_html(mut body: String) -> (String, String) {
     (body, String::from(ret))
 }
 
-fn set_image(picture: &String, icon: &String, image: &Image) -> bool {
+fn set_image(data: &ImageData, picture: &String, icon: &String, image: &Image) -> bool {
     let mut pixbuf: Option<Pixbuf> = None;
     let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
         pixbuf
@@ -402,6 +404,21 @@ fn set_image(picture: &String, icon: &String, image: &Image) -> bool {
         }
     } else if icon != "" {
         (use_icon)(pixbuf);
+        return true;
+    } else if data.width != -1 {
+        let bytes = gtk::glib::Bytes::from(&data.data);
+        pixbuf = Some(Pixbuf::from_bytes(
+            &bytes,
+            gdk_pixbuf::Colorspace::Rgb,
+            data.has_alpha,
+            data.bits_per_sample,
+            data.width,
+            data.height,
+            data.rowstride,
+        ));
+        pixbuf = resize_pixbuf(pixbuf);
+        image.set_from_pixbuf(Some(&pixbuf.unwrap()));
+        image.style_context().add_class("picture");
         return true;
     }
     false
