@@ -421,5 +421,6 @@ fn set_image(data: &ImageData, picture: &String, icon: &String, image: &Image) -
         image.style_context().add_class("picture");
         return true;
     }
+    println!("{}", data.width);
     false
 }
