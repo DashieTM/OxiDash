@@ -13,7 +13,9 @@ use glib::subclass::InitializingObject;
 use gtk::gdk_pixbuf::{self, Pixbuf};
 use gtk::glib::clone;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate, Image, Label, PolicyType, ProgressBar, ScrolledWindow};
+use gtk::{
+    glib, Button, CompositeTemplate, Entry, Image, Label, PolicyType, ProgressBar, ScrolledWindow,
+};
 use gtk::{prelude::*, Box};
 
 use crate::{ImageData, Notification};
@@ -57,6 +59,31 @@ impl Window {
         self.notibox.remove(&*button.imp().notibox.take());
         self.notibox.remove(button);
     }
+    fn delete_specific_notification_with_id(
+        &self,
+        id: u32,
+        id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+    ) {
+        let mut map = id_map.borrow_mut();
+        let button = map.get(&id);
+        if button.is_none() {
+            return;
+        }
+        let button = button.unwrap();
+        thread::spawn(move || {
+            let conn = Connection::new_session().unwrap();
+            let proxy = conn.with_proxy(
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                Duration::from_millis(1000),
+            );
+            let _: Result<(), dbus::Error> =
+                proxy.method_call("org.freedesktop.Notifications", "CloseNotification", (id,));
+        });
+        self.notibox.remove(&*button.imp().notibox.take());
+        self.notibox.remove(&*button.clone());
+        map.remove(&id);
+    }
 }
 
 #[glib::object_subclass]
@@ -84,15 +111,21 @@ pub fn modify_notification(
     let notibutton = map.get(&id).unwrap().imp();
     let notibox_borrow = notibutton.notibox.borrow_mut();
     let notibox = notibox_borrow.imp();
+    let basebox = notibox.basebox.borrow_mut();
+    let textbox = notibox.textbox.borrow_mut();
+    let picbuttonbox = notibox.picbuttonbox.borrow_mut();
+
+
     let exists = notibox.has_progbar.get();
     if notification.progress < 0 && exists {
-        notibox_borrow.remove(&notibox.progbar.take());
+        basebox.remove(&notibox.progbar.take());
         notibox.has_progbar.set(false);
     } else if notification.progress > 0 {
         let mut progbar = notibox.progbar.borrow_mut();
         if !exists {
             let newprog = ProgressBar::new();
             *progbar = newprog;
+            basebox.append(&*progbar);
             notibox.has_progbar.set(true);
         }
         progbar.set_fraction(notification.progress as f64 / 100.0);
@@ -100,14 +133,14 @@ pub fn modify_notification(
 
     let exists = notibox.has_summary.get();
     if notification.summary == "" && exists {
-        notibox_borrow.remove(&notibox.summary.take());
+        textbox.remove(&notibox.summary.take());
         notibox.has_summary.set(false);
     } else if notification.summary != "" {
         let (text, css_classes) = class_from_html(notification.summary);
         let mut text_borrow = notibox.summary.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
-            notibox_borrow.append(&*text_borrow);
+            textbox.append(&*text_borrow);
             notibox.has_summary.set(true);
         }
         text_borrow.set_text(text.as_str());
@@ -116,14 +149,14 @@ pub fn modify_notification(
 
     let exists = notibox.has_body.get();
     if notification.body == "" && exists {
-        notibox_borrow.remove(&notibox.body.take());
+        textbox.remove(&notibox.body.take());
         notibox.has_body.set(false);
     } else if notification.body != "" {
         let (text, css_classes) = class_from_html(notification.body);
         let mut text_borrow = notibox.body.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
-            notibox_borrow.append(&*text_borrow);
+            textbox.append(&*text_borrow);
             notibox.has_body.set(true);
         }
         text_borrow.set_text(text.as_str());
@@ -132,14 +165,14 @@ pub fn modify_notification(
 
     let exists = notibox.has_image.get();
     if notification.image_path == "" && notification.app_icon == "" && exists {
-        notibox_borrow.remove(&notibox.image.take());
+        picbuttonbox.remove(&notibox.image.take());
         notibox.has_image.set(false);
     } else {
         let mut image_borrow = notibox.image.borrow_mut();
         if !exists {
             let img = Image::new();
             *image_borrow = img;
-            notibox_borrow.append(&*image_borrow);
+            picbuttonbox.append(&*image_borrow);
             notibox.has_image.set(true);
         }
         set_image(
@@ -172,6 +205,13 @@ pub fn show_notification(
     picbuttonbox.set_size_request(100, 110);
     picbuttonbox.set_halign(gtk::Align::End);
     picbuttonbox.set_hexpand(false);
+
+    let mut has_inline_reply = false;
+    for action in notification.actions.iter() {
+        if action == "inline-reply" {
+            has_inline_reply = true;
+        }
+    }
 
     if notification.body != "" {
         notiimp.has_body.set(true);
@@ -228,6 +268,29 @@ pub fn show_notification(
         let mut shared_progbar = notiimp.progbar.borrow_mut();
         *shared_progbar = progbar;
         notibox.append(&*shared_progbar);
+    }
+
+    let inline_reply = Entry::new();
+    if has_inline_reply {
+        let id = notification.replaces_id;
+        inline_reply.connect_activate(clone!(@weak window, @weak id_map => move |entry| {
+        let text = entry.text().to_string();
+            thread::spawn(move || {
+                let conn = Connection::new_session().unwrap();
+                let proxy = conn.with_proxy(
+                    "org.freedesktop.Notifications",
+                    "/org/freedesktop/Notifications",
+                    Duration::from_millis(1000),
+                );
+                let _: Result<(), dbus::Error> = proxy.method_call(
+                    "org.freedesktop.Notifications",
+                    "InlineReply",
+                    (id, text),
+                );
+            });
+            window.delete_specific_notification_with_id(id, id_map.clone());
+        }));
+        notibox.append(&inline_reply);
     }
 
     let buttonbox = Box::new(gtk::Orientation::Horizontal, 0);
