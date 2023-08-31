@@ -56,7 +56,7 @@
         </child>
         <child>
           <object class="GtkScrolledWindow" id="scrolled_window">
-            <property name="min-content-height">100</property>
+            <property name="min-content-height">1</property>
             <property name="max-content-height">1000</property>
             <property name="propagate-natural-height">true</property>
             <property name="name">NotificationsWindow</property>

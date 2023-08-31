@@ -318,6 +318,9 @@ pub fn show_notification(
     let mut notibox_borrow = notibutton.imp().notibox.borrow_mut();
     *notibox_borrow = notibox.clone();
     buttonbox.append(&*notibutton);
+    if !window.scrolled_window.is_visible() {
+        window.scrolled_window.show();
+    }
     id_map
         .borrow_mut()
         .insert(notification.replaces_id, notibutton.clone());
@@ -360,6 +363,7 @@ impl ObjectImpl for Window {
             .set_hscrollbar_policy(PolicyType::Never);
         self.scrolled_window
             .set_vscrollbar_policy(PolicyType::Never);
+        self.scrolled_window.hide();
 
         let motion_event_controller = gtk::EventControllerMotion::new();
         motion_event_controller.connect_enter(clone!(@weak self as window => move |_,_,_| {
