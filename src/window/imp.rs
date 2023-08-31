@@ -45,7 +45,8 @@ impl Window {
         id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
     ) {
         let id = button.imp().notification_id.get();
-        id_map.borrow_mut().remove(&id);
+        let mut map = id_map.borrow_mut();
+        map.remove(&id);
         thread::spawn(move || {
             let conn = Connection::new_session().unwrap();
             let proxy = conn.with_proxy(
@@ -58,6 +59,9 @@ impl Window {
         });
         self.notibox.remove(&*button.imp().notibox.take());
         self.notibox.remove(button);
+        if map.is_empty() {
+            self.scrolled_window.hide();
+        }
     }
     fn delete_specific_notification_with_id(
         &self,
@@ -83,6 +87,9 @@ impl Window {
         self.notibox.remove(&*button.imp().notibox.take());
         self.notibox.remove(&*button.clone());
         map.remove(&id);
+        if map.is_empty() {
+            self.scrolled_window.hide();
+        }
     }
 }
 
@@ -114,7 +121,6 @@ pub fn modify_notification(
     let basebox = notibox.basebox.borrow_mut();
     let textbox = notibox.textbox.borrow_mut();
     let picbuttonbox = notibox.picbuttonbox.borrow_mut();
-
 
     let exists = notibox.has_progbar.get();
     if notification.progress < 0 && exists {
