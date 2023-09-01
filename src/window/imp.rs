@@ -111,6 +111,7 @@ impl ObjectSubclass for Window {
 
 pub fn modify_notification(
     notification: Notification,
+    window: &Window,
     id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
 ) {
     let id = notification.replaces_id;
@@ -142,7 +143,7 @@ pub fn modify_notification(
         textbox.remove(&notibox.summary.take());
         notibox.has_summary.set(false);
     } else if notification.summary != "" {
-        let (text, css_classes) = class_from_html(notification.summary);
+        let (text, css_classes, _) = class_from_html(notification.summary);
         let mut text_borrow = notibox.summary.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
@@ -153,20 +154,29 @@ pub fn modify_notification(
         text_borrow.set_css_classes(&[&"summary", &css_classes]);
     }
 
+    let mut has_body_image = false;
+    let mut image_path = "".to_string();
+
     let exists = notibox.has_body.get();
     if notification.body == "" && exists {
         textbox.remove(&notibox.body.take());
         notibox.has_body.set(false);
     } else if notification.body != "" {
-        let (text, css_classes) = class_from_html(notification.body);
+        let (text, css_classes, has_image) = class_from_html(notification.body);
         let mut text_borrow = notibox.body.borrow_mut();
+        if has_image {
+            has_body_image = has_image;
+            image_path = css_classes;
+        } else {
+            text_borrow.style_context().add_class(&css_classes);
+        }
         if !exists {
             *text_borrow = Label::new(None);
             textbox.append(&*text_borrow);
             notibox.has_body.set(true);
         }
         text_borrow.set_text(text.as_str());
-        text_borrow.set_css_classes(&[&"text", &css_classes]);
+        text_borrow.set_css_classes(&[&"text"]);
     }
 
     let exists = notibox.has_image.get();
@@ -184,6 +194,52 @@ pub fn modify_notification(
         set_image(
             &notification.image_data,
             &notification.image_path,
+            &notification.app_icon,
+            &image_borrow,
+        );
+    }
+
+    let mut has_inline_reply = false;
+    for action in notification.actions.iter() {
+        if action == "inline-reply" {
+            has_inline_reply = true;
+        }
+    }
+    let exists = notibox.has_inline_reply.get();
+    if !has_inline_reply && exists {
+        basebox.remove(&notibox.inline_reply.take());
+        notibox.has_inline_reply.set(false);
+    } else if has_inline_reply {
+        let mut entry = notibox.inline_reply.borrow_mut();
+        if !exists {
+            let newentry = gtk::Entry::new();
+            let id_map_clone = id_map.clone();
+            newentry.connect_activate(clone!(@weak window => move |entry| {
+                let id = notification.replaces_id;
+                let text = entry.text().to_string();
+                activate_inline_reply(id, text, &window, id_map_clone.clone());
+            }));
+            *entry = newentry;
+            basebox.append(&*entry);
+            notibox.has_inline_reply.set(true);
+        }
+    }
+
+    let exists = notibox.has_body_image.get();
+    if !has_body_image && exists {
+        basebox.remove(&notibox.body_image.take());
+        notibox.has_body_image.set(false);
+    } else if has_body_image {
+        let mut image_borrow = notibox.body_image.borrow_mut();
+        if !exists {
+            let image = Image::new();
+            *image_borrow = image;
+            basebox.append(&*image_borrow);
+            notibox.has_body_image.set(true);
+        }
+        set_image(
+            &notification.image_data,
+            &image_path,
             &notification.app_icon,
             &image_borrow,
         );
@@ -219,11 +275,20 @@ pub fn show_notification(
         }
     }
 
+    let mut has_body_image = false;
+    let mut image_path = "".to_string();
+
     if notification.body != "" {
         notiimp.has_body.set(true);
-        let (textstr, css_classes) = class_from_html(notification.body.clone());
+        let (textstr, css_classes, has_image) = class_from_html(notification.body.clone());
         let text = Label::new(Some(&textstr));
-        text.set_css_classes(&["text", &css_classes]);
+        if has_image {
+            has_body_image = has_image;
+            image_path = css_classes;
+        } else {
+            text.style_context().add_class(&css_classes);
+        }
+        text.set_css_classes(&["text"]);
         text.set_xalign(0.0);
         text.set_wrap(true);
         text.set_halign(gtk::Align::Center);
@@ -233,7 +298,7 @@ pub fn show_notification(
     }
     if notification.summary != "" {
         notiimp.has_summary.set(true);
-        let (textstr, css_classes) = class_from_html(notification.summary.clone());
+        let (textstr, css_classes, _) = class_from_html(notification.summary.clone());
         let summary = Label::new(Some(&textstr));
         summary.set_css_classes(&["summary", &css_classes]);
         summary.set_xalign(0.0);
@@ -244,7 +309,7 @@ pub fn show_notification(
         textbox.append(&*shared_summary);
     }
     if notification.app_name != "" {
-        let (textstr, css_classes) = class_from_html(notification.app_name.clone());
+        let (textstr, css_classes, _) = class_from_html(notification.app_name.clone());
         let appname = Label::new(Some(&textstr));
         appname.set_css_classes(&["app_name", &css_classes]);
         appname.set_xalign(0.0);
@@ -279,24 +344,26 @@ pub fn show_notification(
     let inline_reply = Entry::new();
     if has_inline_reply {
         let id = notification.replaces_id;
-        inline_reply.connect_activate(clone!(@weak window, @weak id_map => move |entry| {
-        let text = entry.text().to_string();
-            thread::spawn(move || {
-                let conn = Connection::new_session().unwrap();
-                let proxy = conn.with_proxy(
-                    "org.freedesktop.Notifications",
-                    "/org/freedesktop/Notifications",
-                    Duration::from_millis(1000),
-                );
-                let _: Result<(), dbus::Error> = proxy.method_call(
-                    "org.freedesktop.Notifications",
-                    "InlineReply",
-                    (id, text),
-                );
-            });
-            window.delete_specific_notification_with_id(id, id_map.clone());
+        let text = inline_reply.text().to_string();
+        inline_reply.connect_activate(clone!(@weak window, @weak id_map => move |_| {
+            activate_inline_reply(id, text.clone(), &window, id_map);
         }));
         notibox.append(&inline_reply);
+    }
+
+    if has_body_image {
+        let body_image = Image::new();
+        body_image.set_size_request(500, 500);
+        println!("{}", image_path);
+        notiimp.has_body_image.set(set_image(
+            &notification.image_data,
+            &image_path,
+            &notification.app_icon,
+            &body_image,
+        ));
+        let mut shared_image = notiimp.body_image.borrow_mut();
+        *shared_image = body_image;
+        notibox.append(&*shared_image);
     }
 
     let buttonbox = Box::new(gtk::Orientation::Horizontal, 0);
@@ -413,43 +480,53 @@ impl AdwApplicationWindowImpl for Window {}
 
 impl ApplicationWindowImpl for Window {}
 
-fn class_from_html(mut body: String) -> (String, String) {
-    let mut open = false;
+fn class_from_html(mut body: String) -> (String, String, bool) {
     let mut ret: &str = "";
-    for char in body.chars() {
-        if char == '<' && !open {
-            open = true;
-        } else if open {
-            ret = match char {
-                'b' => "bold",
-                'i' => "italic",
-                'u' => "underline",
-                'h' => "hyprlink",
-                _ => {
-                    ret = "";
-                    break;
-                }
-            };
-            break;
+    let mut retstring = body.clone();
+    let has_image: bool;
+    if body.contains("<br><img src=\"file:///") {
+        has_image = true;
+        let split = retstring.split_once("<br><img src=\"file:///").unwrap();
+        body = split.0.to_string() + "sent an image.".into();
+        retstring = split.1.to_string();
+        let split = retstring.split_once("\"");
+        if split.is_some() {
+            ret = split.unwrap().0;
         }
+    } else {
+        has_image = false;
+        let mut open = false;
+        for char in body.chars() {
+            if char == '<' && !open {
+                open = true;
+            } else if open {
+                ret = match char {
+                    'u' => "underline",
+                    _ => {
+                        ret = "";
+                        break;
+                    }
+                };
+                break;
+            }
+        }
+        body.remove_matches("<u>");
+        body.remove_matches("</u>");
     }
-    body.remove_matches("<b>");
-    body.remove_matches("</b>");
-    body.remove_matches("<i>");
-    body.remove_matches("</i>");
-    body.remove_matches("<a href=\">");
-    body.remove_matches("</a>");
-    body.remove_matches("<u>");
-    body.remove_matches("</u>");
-    (body, String::from(ret))
+    (body, String::from(ret), has_image)
 }
 
-fn set_image(data: &ImageData, picture: &String, icon: &String, image: &Image) -> bool {
+fn set_image(
+    data: &ImageData,
+    picture: &String,
+    icon: &String,
+    image: &Image,
+) -> bool {
     let mut pixbuf: Option<Pixbuf> = None;
     let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
-        pixbuf
-            .unwrap()
-            .scale_simple(100, 100, gdk_pixbuf::InterpType::Bilinear)
+            pixbuf
+                .unwrap()
+                .scale_simple(100, 100, gdk_pixbuf::InterpType::Bilinear)
     };
     let use_icon = |mut _pixbuf: Option<Pixbuf>| {
         if Path::new(&icon).is_file() {
@@ -466,8 +543,7 @@ fn set_image(data: &ImageData, picture: &String, icon: &String, image: &Image) -
 
     if picture != "" {
         if Path::new(&picture).is_file() {
-            pixbuf = Some(Pixbuf::from_file(picture).unwrap());
-            pixbuf = resize_pixbuf(pixbuf);
+            pixbuf = Some(Pixbuf::from_file_at_size(picture, 100, 100).unwrap());
             image.set_from_pixbuf(Some(&pixbuf.unwrap()));
             image.style_context().add_class("picture");
             return true;
@@ -494,6 +570,24 @@ fn set_image(data: &ImageData, picture: &String, icon: &String, image: &Image) -
         image.style_context().add_class("picture");
         return true;
     }
-    println!("{}", data.width);
     false
+}
+
+pub fn activate_inline_reply(
+    id: u32,
+    text: String,
+    window: &Window,
+    id_map: Rc<RefCell<HashMap<u32, Rc<NotificationButton>>>>,
+) {
+    thread::spawn(move || {
+        let conn = Connection::new_session().unwrap();
+        let proxy = conn.with_proxy(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            Duration::from_millis(1000),
+        );
+        let _: Result<(), dbus::Error> =
+            proxy.method_call("org.freedesktop.Notifications", "InlineReply", (id, text));
+    });
+    window.delete_specific_notification_with_id(id, id_map)
 }

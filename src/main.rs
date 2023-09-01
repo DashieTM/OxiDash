@@ -39,6 +39,20 @@ pub struct ImageData {
     pub data: Vec<u8>,
 }
 
+impl ImageData {
+    pub fn empty() -> Self {
+        Self {
+            width: -1, 
+            height: -1, 
+            rowstride: -1, 
+            has_alpha: false, 
+            bits_per_sample: -1,  
+            channels: -1,
+            data: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub enum Urgency {
     Low,
@@ -364,7 +378,7 @@ fn build_ui(app: &Application) {
 
     rx.attach(None, move |notification| {
         if check_duplicates(&notification, map_clone.clone()) {
-            modify_notification(notification, map_clone.clone());
+            modify_notification(notification, &windowrc3.imp(), map_clone.clone());
         } else {
             show_notification(&notification, &windowrc3.imp(), map_clone.clone());
             resize_window(&windowrc3);

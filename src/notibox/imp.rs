@@ -18,6 +18,8 @@ pub struct NotiBox {
     pub has_image: Cell<bool>,
     pub inline_reply: RefCell<gtk::Entry>,
     pub has_inline_reply: Cell<bool>,
+    pub body_image: RefCell<Image>,
+    pub has_body_image: Cell<bool>,
 }
 
 #[glib::object_subclass]
