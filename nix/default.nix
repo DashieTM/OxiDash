@@ -1,4 +1,5 @@
 { rustPlatform
+, rust-bin
 , pkg-config
 , wrapGAppsHook4
 , gtk4
@@ -7,8 +8,6 @@
 , libadwaita
 , lib
 , lockFile
-, cargo
-, rustc
 , ...
 }:
 let
@@ -32,14 +31,13 @@ rustPlatform.buildRustPackage rec {
     inherit lockFile;
   };
 
-  checkInputs = [ cargo rustc ];
-
   nativeBuildInputs = [
     pkg-config
     wrapGAppsHook4
-    cargo
-    rustc
+    (rust-bin.selectLatestNightlyWith
+      (toolchain: toolchain.default))
   ];
+
   copyLibs = true;
 
   meta = with lib; {
