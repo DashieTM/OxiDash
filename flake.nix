@@ -7,9 +7,7 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
-    rust-overlay = {
-      url = "https://github.com/oxalica/rust-overlay/archive/master.tar.gz";
-    };
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
   outputs = inputs @ { self, flake-parts, ... }:
